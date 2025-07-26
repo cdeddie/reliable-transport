@@ -255,11 +255,11 @@ void B_input(struct pkt packet) {
     }
     else
     {
-        /* packet is corrupted or out of order */
+        /* packet is corrupted or out of order. in SR do not resend ACKs for corrupted packets */
         if (TRACE > 0)
         {
-            printf("----B: packet corrupted or not expected sequence number, resend "
-                "ACK!\n");
+            // printf("----B: packet corrupted or not expected sequence number, resend "
+            //     "ACK!\n");
         }
     }
 }
