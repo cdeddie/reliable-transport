@@ -79,7 +79,7 @@ void A_output(struct msg message)
 
         /* send out packet */
         if (TRACE > 0)
-            printf("----A: Sending packet %d to layer 3\n", sendpkt.seqnum);
+            printf("Sending packet %d to layer 3\n", sendpkt.seqnum);
 
         tolayer3(A, sendpkt);
 
@@ -104,62 +104,57 @@ void A_output(struct msg message)
 */
 void A_input(struct pkt packet)
 {
-    if (IsCorrupted(packet))
-    {
-        if (TRACE > 0)
-        printf("----A: corrupted ACK is received, do nothing!\n");
-        return;
-    }
-
-    if (TRACE > 0)
-    {
-        printf("----A: uncorrupted ACK %d is received\n", packet.acknum);
-    }
-
-    total_ACKs_received++;
-
     int ack_index = packet.acknum;
 
-    /* mark specific ack sequence number as ACKed */
-    if ( ((ack_index - buffer[windowfirst].seqnum + SEQSPACE) % SEQSPACE) < windowcount && !acked[ack_index])
-    {
-        acked[ack_index] = true;
-        new_ACKs++;
-        if (TRACE > 0)
-        {
-            printf("----A: new ACK %d is received\n", packet.acknum);
-        }
-    }
-    else
+    if (!IsCorrupted(packet))
     {
         if (TRACE > 0)
+            printf("----A: uncorrupted ACK %d is received\n", packet.acknum);
+        total_ACKs_received++;
+
+        /* ignore duplicate ACKs */
+        if ( ((ack_index - buffer[windowfirst].seqnum + SEQSPACE) % SEQSPACE) < windowcount && !acked[ack_index])
         {
-            printf("----A: duplicate ACK %d is received\n", packet.acknum);
+            acked[ack_index] = true;
+            new_ACKs++;
+            if (TRACE > 0)
+            {
+                printf("----A: new ACK %d is received\n", packet.acknum);
+            }
         }
-        return;
+        else
+        {
+            if (TRACE > 0)
+            {
+                printf ("----A: duplicate ACK received, do nothing!\n");
+            }
+        }
+
+        /* slide window if possible */
+        while (windowcount > 0 && acked[buffer[windowfirst].seqnum])
+        {
+            acked[buffer[windowfirst].seqnum] = false;
+            windowfirst = (windowfirst + 1) % WINDOWSIZE;
+            windowcount--;
+        }
+
+        /* reset values when window is empty */
+        if (windowcount == 0)
+        {
+            windowfirst = 0;
+            windowlast = -1;
+        }
+
+        /* start timer if there are more unACKed packets in the window */
+        stoptimer(A);
+        if (windowcount > 0)
+        {
+            starttimer(A, RTT);
+        }
     }
-
-    /* slide window if possible */
-
-    while (windowcount > 0 && acked[buffer[windowfirst].seqnum])
+    else if (TRACE > 0)
     {
-        acked[buffer[windowfirst].seqnum] = false;
-        windowfirst = (windowfirst + 1) % WINDOWSIZE;
-        windowcount--;
-    }
-
-    /* reset values when window is empty */
-    if (windowcount == 0)
-    {
-        windowfirst = 0;
-        windowlast = -1;
-    }
-
-    /* start timer if there are more unACKed packets in the window */
-    stoptimer(A);
-    if (windowcount > 0)
-    {
-        starttimer(A, RTT);
+        printf("----A: corrupted ACK is received, do nothing!\n");
     }
 }
 
@@ -198,46 +193,42 @@ static bool received[SEQSPACE];
 
 /* called from layer 3, when a packet arrives for layer 4 at B*/
 void B_input(struct pkt packet) {
-    if (IsCorrupted(packet))
-    {
-        if (TRACE > 0)
-        {
-            printf("----B: corrupted packet %d is received, do nothing\n", packet.seqnum);
-        }
-        return;
-    }
-
-    /* check if packet is within reciever window */
     int seqnum = packet.seqnum;
 
-    /* check if packet is in recv window */
-    if ( ((seqnum - expectedseqnum + SEQSPACE) % SEQSPACE) < WINDOWSIZE && !received[seqnum]) {
-        /* new packet */
-        received[seqnum] = true;
-        B_buffer[seqnum] = packet;
+    if (!IsCorrupted(packet))
+    {
+        if (TRACE > 0)
+        {
+            printf("----B: packet %d is correctly received, send ACK!\n",packet.seqnum);
+        }
         packets_received++;
 
-        if (TRACE > 0)
-        {
-            printf("----B: new packet %d is received, send ACK\n", seqnum);
+        /* check if packet is in recv window */
+        if ( ((seqnum - expectedseqnum + SEQSPACE) % SEQSPACE) < WINDOWSIZE && !received[seqnum]) {
+            /* new packet */
+            received[seqnum] = true;
+            B_buffer[seqnum] = packet;
+            packets_received++;
         }
-    }
-    else if (received[seqnum])
-    {
-        /* duplicate packet */
-        if (TRACE > 0)
+        else if (received[seqnum])
         {
-            printf("----B: duplicate packet %d is received", seqnum);
+            /* duplicate packet */
         }
+        else
+        {
+            /* packet is outside window */
+        }
+
+
     }
     else
     {
-        /* packet is outside window */
+        /* packet is corrupted or out of order */
         if (TRACE > 0)
         {
-            printf("----B: packet %d outside window, ignored", seqnum);
+            printf("----B: packet corrupted or not expected sequence number, resend "
+                "ACK!\n");
         }
-        return;
     }
 
     /* send ACK for specific packet */
