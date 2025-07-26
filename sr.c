@@ -201,7 +201,6 @@ void B_input(struct pkt packet) {
         {
             printf("----B: packet %d is correctly received, send ACK!\n",packet.seqnum);
         }
-        packets_received++;
 
         /* check if packet is in recv window */
         if ( ((seqnum - expectedseqnum + SEQSPACE) % SEQSPACE) < WINDOWSIZE && !received[seqnum]) {
@@ -260,7 +259,7 @@ void B_init(void)
     expectedseqnum = 0;
     B_nextseqnum = 1;
     int i;
-    for (i = 0; i < WINDOWSIZE; i++)
+    for (i = 0; i < SEQSPACE; i++)
     {
         B_buffer[i].seqnum = NOTINUSE;
         received[i] = false;
