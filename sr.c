@@ -43,7 +43,7 @@ bool IsCorrupted(struct pkt packet)
 /********* Sender (A) variables and functions ************/
 
 static struct pkt buffer[WINDOWSIZE]; /* array of struct pkt for storing packets waiting for ACK */
-static bool acked[WINDOWSIZE];
+static bool acked[SEQSPACE];
 static int windowfirst, windowlast; /* array indexes of the first/last packet awaiting ACK */
 static int windowcount;  /* the number of packets currently awaiting an ACK */
 static int A_nextseqnum; /* the next sequence number to be used by the sender */
@@ -118,7 +118,7 @@ void A_input(struct pkt packet)
 
     total_ACKs_received++;
 
-    int ack_index = packet.acknum % WINDOWSIZE;
+    int ack_index = packet.acknum;
 
     /* mark specific ack sequence number as ACKed */
     if (!acked[ack_index])
@@ -141,11 +141,18 @@ void A_input(struct pkt packet)
 
     /* slide window if possible */
 
-    while (acked[windowfirst] && windowcount > 0)
+    while (windowcount > 0 && acked[buffer[windowfirst].seqnum])
     {
-        acked[windowfirst] = false;
+        acked[buffer[windowfirst].seqnum] = false;
         windowfirst = (windowfirst + 1) % WINDOWSIZE;
         windowcount--;
+    }
+
+    /* reset values when window is empty */
+    if (windowcount == 0)
+    {
+        windowfirst = 0;
+        windowlast = -1;
     }
 
     /* start timer if there are more unACKed packets in the window */
@@ -202,15 +209,13 @@ void B_input(struct pkt packet) {
 
     /* check if packet is within reciever window */
     int seqnum = packet.seqnum;
-    int window_start = expectedseqnum;
-    int window_end = (expectedseqnum + WINDOWSIZE - 1) % SEQSPACE;
 
     int buffer_idx = seqnum % WINDOWSIZE;
     if (received[buffer_idx]) {
         /* duplicate packet */
         if (TRACE > 0)
         {
-            printf("----B: duplicate packet %d is received, send ACK anyway\n", seqnum);
+            printf("----B: duplicate packet %d is received", seqnum);
         }
     }
     else
@@ -229,7 +234,8 @@ void B_input(struct pkt packet) {
     /* send ACK for specific packet */
     struct pkt sendpkt;
     sendpkt.acknum = seqnum;
-    sendpkt.seqnum = 0; /* does not matter */
+    sendpkt.seqnum = B_nextseqnum;
+    B_nextseqnum = (B_nextseqnum + 1) % 2;
     int i;
     for (i = 0; i < 20; i++)
     {
@@ -239,10 +245,10 @@ void B_input(struct pkt packet) {
     tolayer3(B, sendpkt);
 
     /* deliver packets to layer 5 in order */
-    while (received[expectedseqnum % WINDOWSIZE])
+    while (received[expectedseqnum % SEQSPACE])
     {
-        tolayer5(B, B_buffer[expectedseqnum % WINDOWSIZE].payload);
-        received[expectedseqnum % WINDOWSIZE] = false;
+        tolayer5(B, B_buffer[expectedseqnum].payload);
+        received[expectedseqnum % SEQSPACE] = false;
         expectedseqnum = (expectedseqnum + 1) % SEQSPACE;
     }
 }
