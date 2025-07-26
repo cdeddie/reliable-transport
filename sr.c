@@ -1,5 +1,5 @@
 #include "emulator.h"
-#include "gbn.h"
+#include "sr.h"
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -79,7 +79,7 @@ void A_output(struct msg message)
 
         /* send out packet */
         if (TRACE > 0)
-            printf("Sending packet %d to layer 3\n", sendpkt.seqnum);
+            printf("----A: Sending packet %d to layer 3\n", sendpkt.seqnum);
 
         tolayer3(A, sendpkt);
 
@@ -121,7 +121,7 @@ void A_input(struct pkt packet)
     int ack_index = packet.acknum;
 
     /* mark specific ack sequence number as ACKed */
-    if (!acked[ack_index])
+    if ( ((ack_index - buffer[windowfirst].seqnum + SEQSPACE) % SEQSPACE) < windowcount && !acked[ack_index])
     {
         acked[ack_index] = true;
         new_ACKs++;
@@ -210,8 +210,20 @@ void B_input(struct pkt packet) {
     /* check if packet is within reciever window */
     int seqnum = packet.seqnum;
 
-    int buffer_idx = seqnum % WINDOWSIZE;
-    if (received[buffer_idx]) {
+    /* check if packet is in recv window */
+    if ( ((seqnum - expectedseqnum + SEQSPACE) % SEQSPACE) < WINDOWSIZE && !received[seqnum]) {
+        /* new packet */
+        received[seqnum] = true;
+        B_buffer[seqnum] = packet;
+        packets_received++;
+
+        if (TRACE > 0)
+        {
+            printf("----B: new packet %d is received, send ACK\n", seqnum);
+        }
+    }
+    else if (received[seqnum])
+    {
         /* duplicate packet */
         if (TRACE > 0)
         {
@@ -220,15 +232,12 @@ void B_input(struct pkt packet) {
     }
     else
     {
-        /* new packet */
-        received[buffer_idx] = true;
-        B_buffer[buffer_idx] = packet;
-        packets_received++;
-
+        /* packet is outside window */
         if (TRACE > 0)
         {
-            printf("----B: new packet %d is received, send ACK\n", seqnum);
+            printf("----B: packet %d outside window, ignored", seqnum);
         }
+        return;
     }
 
     /* send ACK for specific packet */
@@ -258,6 +267,7 @@ void B_input(struct pkt packet) {
 void B_init(void)
 {
     expectedseqnum = 0;
+    B_nextseqnum = 1;
     int i;
     for (i = 0; i < WINDOWSIZE; i++)
     {
