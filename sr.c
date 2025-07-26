@@ -117,9 +117,10 @@ void A_input(struct pkt packet)
         {
             acked[ack_index] = true;
             new_ACKs++;
+
             if (TRACE > 0)
             {
-                printf("----A: new ACK %d is received\n", packet.acknum);
+                printf("----A: ACK %d is not a duplicate\n",packet.acknum);
             }
         }
         else
